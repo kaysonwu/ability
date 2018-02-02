@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>PHPFramework Performance</title>
+    <link rel="stylesheet" type="text/css" href="css/bootstrap.min.css" />
+    <link rel="stylesheet" type="text/css" href="css/bootstrap-theme.min.css" />
+    <link rel="stylesheet" type="text/css" href="css/morris.css" />
+    <link rel="stylesheet" type="text/css" href="css/app.css" />
+    <script type="text/javascript" src="js/jquery-1.9.0.min.js"></script>
+    <script type="text/javascript" src="js/raphael.min.js"></script>
+    <script type="text/javascript" src="js/morris.min.js"></script>
+</head>
+<body>
+<div class="page-wrapper container">
+    <h1 class="text-center" style="margin-bottom: 100px;">PHPFramework Performance Evaluation</h1>
+    <div class="row">
+        <form id="form" action="index.php" method="get" class="form-inline">
+            <div class="form-group">
+                <label for="inpType">测试类型</label>
+                <select name="type" id="inpType" class="form-control">
+                    <option value="">请选择</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="inpRequests">请求次数</label>
+                <input type="text" name="requests" placeholder="总共请求次数" id="inpRequests" class="form-control" />
+            </div>
+            <div class="form-group">
+                <label for="inpConcurrency">并发数</label>
+                <input type="text" name="concurrency" placeholder="并发线程数" id="inpConcurrency" class="form-control" />
+            </div>
+            <button type="submit" class="btn btn-primary">执行</button>
+        </form>
+    </div>
+    <div class="row">
+        <div class="main-box">
+            <div class="main-box-header clearfix">
+                <h2 class="pull-left">耗时 (s)</h2>
+            </div>
+            <div class="main-box-body clearfix">
+                <div id="timeCost" class="graph"></div>
+            </div>
+        </div>
+    </div>
+    <div class="row">
+        <div class="main-box">
+            <div class="main-box-header clearfix">
+                <h2 class="pull-left">并发请求指数 (ms)</h2>
+            </div>
+            <div class="main-box-body clearfix">
+                <div id="requestsIndex" class="graph"></div>
+            </div>
+        </div>
+    </div>
+    <div class="row">
+        <div class="main-box">
+            <div class="main-box-header clearfix">
+                <h2 class="pull-left">请求情况</h2>
+            </div>
+            <div class="main-box-body clearfix">
+                <div id="requests" class="graph"></div>
+            </div>
+        </div>
+    </div>
+</div>
+</body>
+<script type="text/javascript">
+
+    $(function(){
+
+        // 耗时
+        var timeCostBar     = new Morris.Bar({
+            element: 'timeCost',
+            data: [],
+            xkey: 'name',
+            ykeys: ['taken_time'],
+            labels: ['使用时间']
+        });
+
+        // 并发请求指数
+        var requestsIndexLine = new Morris.Line({
+            element: 'requestsIndex',
+            data: [],
+            lineColors: ['#f4645f','#8e44ad','#65d38d', '#253842'],
+            xkey: 'id',
+            ykeys: ['laravel', 'lumen', 'phalcon', 'phalcon-micro'],
+            labels: ['laravel 5.5.*','lumen 5.5.*', 'phalcon 3.2.4', 'phalcon-micro 3.2.4'],
+            resize: true,
+            parseTime: false
+        });
+
+        // 请求情况
+        var requestsBar = new Morris.Bar({
+            element: 'requests',
+            data: [],
+            xkey: 'name',
+            ykeys: ['complete_requests', 'failed_requests'],
+            labels: ['成功请求', '失败请求'],
+            barColors: ['#00a65a', '#f56954']
+        });
+
+        // 加载类型配置
+        var frameworks = {};
+        $.getJSON('index.php?rec=getType', function(response){
+            var options = '';
+            frameworks  = response;
+            $.each(response, function(key, val){
+                options += '<option value="'+key+'">'+key+'</option>';
+            });
+            $('#inpType').append(options);
+        });
+
+        $('#form').submit(function(){
+
+            var self = $(this);
+            var btn  = self.find(':submit');
+            var type = $('#inpType').val();
+
+            if (typeof frameworks[type] === 'undefined')
+                return false;
+
+            var len  = 0;
+            var data = {
+                timeCost: [],
+                requestIndex: [],
+                requests: []
+            };
+
+            btn.attr('disabled', true);
+            $.each(frameworks[type], function(name, url) {
+
+                len++;
+
+                $.getJSON('analyze.php?name='+name+'&url='+url, self.serialize(), function(response){
+
+                    var ids = [50, 66, 75, 80, 90, 95, 98, 99, 100];
+                    len--;
+
+                    // 耗时
+                    data.timeCost.push({
+                        name: response.name,
+                        taken_time: response.taken_time
+                    });
+
+                    // 并发请求指数
+                    $.each(ids, function(i, v){
+
+                        if(!data.requestIndex[i]){
+                            data.requestIndex[i] = {};
+                        }
+
+                        data.requestIndex[i]['id'] = v + '%';
+                        data.requestIndex[i][response.name]  =  response['requests_'+v+'_ms'];
+                    });
+
+                    // 请求情况
+                    data.requests.push({
+                        name: response.name,
+                        complete_requests: response.complete_requests,
+                        failed_requests: response.failed_requests
+                    });
+
+                    // 都请求完了，显示图表
+                    if (len === 0) {
+                        btn.attr('disabled', false);
+                        timeCostBar.setData(data.timeCost);
+                        requestsIndexLine.setData(data.requestIndex);
+                        requestsBar.setData(data.requests);
+                    }
+                });
+            });
+
+            return false;
+        });
+    });
+
+</script>
+</html>
